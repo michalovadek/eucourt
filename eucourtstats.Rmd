@@ -156,187 +156,6 @@ ms_years_panel <- dplyr::tibble(year = 1952:year_now) |>
   tidyr::separate_rows(ms_composition, sep = "~~~") |> 
   dplyr::rename(country = ms_composition)
 
-# sector 6 court data
-allcourt <- elx_make_query(
-  "any",
-  sector = 6,
-  include_court_procedure = TRUE,
-  include_court_origin = TRUE,
-  include_original_language = TRUE,
-  include_ecli = TRUE
-) |> 
-  elx_run_query()
-
-# subset data to only prel references, 1 row =  1 reference (ie unpack joint decisions), country-year
-prelrefs <- allcourt |> 
-  filter(str_sub(celex, 6, 6) == "C") |> 
-  filter(str_detect(courtprocedure, "Reference")) |> 
-  filter(!is.na(courtorigin)) |> 
-  mutate(case_no = as.integer(str_sub(celex, 8, 11)),
-         case_year = as.integer(str_sub(celex, 2, 5)),
-         case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)),
-         decision_year = as.integer(str_sub(ecli, 11, 14)),
-         decision_type = str_sub(celex, 6, 7)) |> 
-  mutate(decision_type = fct_infreq(decision_type)) |> 
-  arrange(decision_type) |> 
-  distinct(case_id, case_year, courtorigin) |> 
-  count(case_year, courtorigin) |> 
-  rename(year = case_year,
-         country = courtorigin)
-  #mutate(n = n(), .by = case_id) |> 
-  #arrange(-n, case_id)
-
-# full panel of country x year observations
-prelrefs_panel <- prelrefs |> 
-  expand(country, year = 1958:year_now) |> 
-  left_join(prelrefs) |> 
-  mutate(n = ifelse(is.na(n), 0L, n))
-
-# attach accessions
-prelrefs_panel <- prelrefs_panel |> 
-  arrange(country, year) |> 
-  left_join(accessions) |> 
-  fill(eumember, .direction = "down") |> 
-  mutate(eumember = ifelse(is.na(eumember), 0L, eumember)) |> 
-  mutate(eumember = ifelse(year > 2019 & country == "United Kingdom", 0L, eumember)) |> # brexit correction > 2019 0L
-  rename(n_refs = n)
-
-# data - information notices ----------------------------------------------
-
-# judicial information for CJ
-cns <- allcourt |>
-  filter(str_detect(celex, "CN"))
-
-# add titles
-cns_titles <- cns |> 
-  mutate(title = purrr::map_chr(work, ~elx_fetch_data(., "title")))
-
-# find prel references
-cns_prels <- cns_titles |> 
-  filter(str_detect(title, "preliminary")) |> 
-  select(celex, title, origlang) |> 
-  mutate(celex = case_when(celex == "62008CN0325(01)" ~ "62008CN0375",
-                           celex == "62014CN00016" ~ "62014CN0016",
-                           T ~ celex)) |> 
-  mutate(case_year = as.integer(str_sub(celex, 2, 5)),
-         case_no = as.integer(str_sub(celex, 8, 11)),
-         case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)))
-
-# country dictionary
-countries <- tibble(country = accessions$country) |> 
-  mutate(cntry_regex = country) |> 
-  mutate(cntry_regex = case_when(
-    country == "Czechia" ~ str_c(cntry_regex, "Czech Republic","Nejvyšš", sep = "|"),
-    country == "Slovakia" ~ str_c(cntry_regex, "Slovak Republic","Najvyšš", "Prešov", sep = "|"),
-    country == "Italy" ~ str_c(cntry_regex, "Italia","Tribunale Amministrativ","Tribunale di","Consiglio di", sep = "|"),
-    country == "Poland" ~ str_c(cntry_regex, "Polish", sep = "|"),
-    country == "France" ~ str_c(cntry_regex, "Conseil d", sep = "|"),
-    country == "Belgium" ~ str_c(cntry_regex, "Belgique","Hof van Cassatie","Brussel", sep = "|"),
-    country == "Ireland" ~ str_c(cntry_regex, "Irland", sep = "|"),
-    country == "Austria" ~ str_c(cntry_regex, "Salzburg", sep = "|"),
-    country == "Bulgaria" ~ str_c(cntry_regex, "Veliko Tarn", sep = "|"),
-    country == "Spain" ~ str_c(cntry_regex, "Juzgado","Audiencia Provincial","Tribunal Superior de Justicia", sep = "|"),
-    country == "Romania" ~ str_c(cntry_regex, "România", sep = "|"),
-    country == "Croatia" ~ str_c(cntry_regex, "Rijeci", sep = "|"),
-    country == "Greece" ~ str_c(cntry_regex, "Simvoulio", "Simboulio", sep = "|"),
-    country == "Portugal" ~ str_c(cntry_regex, "Tribunal da Relação", sep = "|"),
-    country == "Lithuania" ~ str_c(cntry_regex, "Lietuv", "Vilniaus", sep = "|"),
-    country == "Latvia" ~ str_c(cntry_regex, "Latvijas","Augstākās", sep = "|"),
-    country == "Hungary" ~ str_c(cntry_regex, "Magyar", "Bíróság", "Budapest","Szeged", sep = "|"),
-    country == "Netherlands" ~ str_c(cntry_regex, "Den Haag","Raad van Ber","College van Bero","Rechtbank Amsterdam", "Raad van State", "Hoge Raad", sep = "|"),
-    country == "United Kingdom" ~ str_c(cntry_regex, "England & Wales","England and Wales", sep = "|"),
-    country == "Germany" ~ str_c(cntry_regex, "Deutschland","Regensburg", sep = "|"),
-    T ~ cntry_regex
-  ))
-
-# extract country matrix
-out_cntry <- sapply(
-  X = str_to_lower(countries$cntry_regex),
-  FUN = grepl,
-  perl = TRUE,
-  str_to_lower(cns_prels$title)
-)
-
-# retrieve pattern matches
-matched_patterns_country_long <- as.data.frame(out_cntry) |> 
-  bind_cols(celex = cns_prels$celex) |> 
-  pivot_longer(cols = -celex) |> 
-  filter(value == TRUE) |> 
-  left_join(countries |> mutate(cntry_regex = str_to_lower(cntry_regex)), by = c("name"="cntry_regex")) |> 
-  distinct(celex, country)
-  
-# wide format
-matched_patterns_country_wide <- matched_patterns_country_long |> 
-  mutate(value = 1L) |> 
-  pivot_wider(names_from = country, names_prefix = "country_", 
-              values_from = value, values_fill = 0L) |> 
-  left_join(cns_prels)
-
-# first regex match in the title
-out_firstmatch <- cns_prels |> 
-  mutate(cntry_regex = str_extract(str_to_lower(title),
-                                   str_to_lower(str_c(countries$cntry_regex, collapse = "|")))) |> 
-  left_join(
-    countries |> 
-      separate_rows(cntry_regex, sep = "\\|") |> 
-      mutate(cntry_regex = str_to_lower(cntry_regex))
-  )
-
-# reconcile matches
-## improvement: use data on authentic language in correction
-cns_matches <- matched_patterns_country_long |> 
-  left_join(out_firstmatch |> rename(country_first = country)) |> 
-  mutate(country_final = country_first,
-         country_final = ifelse(is.na(country_final), country, country_final),
-         country_final = ifelse(country == country_first & !is.na(country_first), country_first, country_final)) |> 
-  distinct(case_id, country_final)
-
-# attach
-cns_prels_country <- cns_prels |> 
-  left_join(cns_matches) |> 
-  rename(country = country_final)
-  # filter(is.na(country_final))
-
-# country validation through origlang
-cns_prels_country <- cns_prels_country |> 
-  mutate(
-    valid_lang = case_when(
-     country == "Austria" & origlang %in% c("German","Slovenian") ~ T,
-     country == "Belgium" & origlang %in% c("French","Dutch","German") ~ T,       
-     country == "Bulgaria" & origlang == "Bulgarian" ~ T,      
-     country == "Croatia" & origlang == "Croatian" ~ T,       
-     country == "Cyprus" & origlang == "Greek" ~ T,        
-     country == "Czechia" & origlang == "Czech" ~ T,       
-     country == "Denmark" & origlang == "Danish" ~ T,       
-     country == "Estonia" & origlang == "Estonian" ~ T,
-     country == "Finland" & origlang == "Finnish" ~ T,       
-     country == "France" & origlang == "French" ~ T,        
-     country == "Germany" & origlang == "German" ~ T,       
-     country == "Greece" & origlang == "Greek" ~ T,        
-     country == "Hungary" & origlang == "Hungarian" ~ T,       
-     country == "Ireland" & origlang %in% c("English","Irish") ~ T,       
-     country == "Italy" & origlang %in% c("Italian","German") ~ T,         
-     country == "Latvia" & origlang == "Latvian" ~ T,        
-     country == "Lithuania" & origlang == "Lithuanian" ~ T,     
-     country == "Luxembourg" & origlang %in% c("French","Luxembourgish","German") ~ T,   
-     country == "Malta" & origlang %in% c("English","Maltese") ~ T,         
-     country == "Netherlands" & origlang == "Dutch" ~ T,   
-     country == "Poland" & origlang == "Polish" ~ T,
-     country == "Portugal" & origlang == "Portuguese" ~ T, 
-     country == "Romania" & origlang == "Romanian" ~ T,       
-     country == "Slovakia" & origlang == "Slovak" ~ T,      
-     country == "Slovenia" & origlang == "Slovenian" ~ T,      
-     country == "Spain" & origlang == "Spanish" ~ T,         
-     country == "Sweden" & origlang == "Swedish" ~ T,        
-     country == "United Kingdom" & origlang == "English" ~ T,
-     T ~ FALSE
-    )
-  )
-
-# check manually
-# cns_prels_country |> 
-#  filter(valid_lang == FALSE)
-
 # get curia list
 curia_list <- elx_curia_list("all", parse = TRUE)
 
@@ -418,6 +237,189 @@ n_cases_year_court <- curia_list |>
   reframe(n = n_distinct(case_id)) %>%
   right_join(., expand(., court, case_year)) |> 
   mutate(n = ifelse(is.na(n), 0L, n))
+
+########### adjust or remove later
+
+# sector 6 court data
+# allcourt <- elx_make_query(
+#   "any",
+#   sector = 6,
+#   include_court_procedure = TRUE,
+#   include_court_origin = TRUE,
+#   include_original_language = TRUE,
+#   include_ecli = TRUE
+# ) |> 
+#   elx_run_query()
+# 
+# # subset data to only prel references, 1 row =  1 reference (ie unpack joint decisions), country-year
+# prelrefs <- allcourt |> 
+#   filter(str_sub(celex, 6, 6) == "C") |> 
+#   filter(str_detect(courtprocedure, "Reference")) |> 
+#   filter(!is.na(courtorigin)) |> 
+#   mutate(case_no = as.integer(str_sub(celex, 8, 11)),
+#          case_year = as.integer(str_sub(celex, 2, 5)),
+#          case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)),
+#          decision_year = as.integer(str_sub(ecli, 11, 14)),
+#          decision_type = str_sub(celex, 6, 7)) |> 
+#   mutate(decision_type = fct_infreq(decision_type)) |> 
+#   arrange(decision_type) |> 
+#   distinct(case_id, case_year, courtorigin) |> 
+#   count(case_year, courtorigin) |> 
+#   rename(year = case_year,
+#          country = courtorigin)
+#   #mutate(n = n(), .by = case_id) |> 
+#   #arrange(-n, case_id)
+# 
+# # full panel of country x year observations
+# prelrefs_panel <- prelrefs |> 
+#   expand(country, year = 1958:year_now) |> 
+#   left_join(prelrefs) |> 
+#   mutate(n = ifelse(is.na(n), 0L, n))
+# 
+# # attach accessions
+# prelrefs_panel <- prelrefs_panel |> 
+#   arrange(country, year) |> 
+#   left_join(accessions) |> 
+#   fill(eumember, .direction = "down") |> 
+#   mutate(eumember = ifelse(is.na(eumember), 0L, eumember)) |> 
+#   mutate(eumember = ifelse(year > 2019 & country == "United Kingdom", 0L, eumember)) |> # brexit correction > 2019 0L
+#   rename(n_refs = n)
+# 
+# # data - information notices ----------------------------------------------
+# 
+# # judicial information for CJ
+# cns <- allcourt |>
+#   filter(str_detect(celex, "CN"))
+# 
+# # add titles
+# cns_titles <- cns |> 
+#   mutate(title = purrr::map_chr(work, ~elx_fetch_data(., "title")))
+# 
+# # find prel references
+# cns_prels <- cns_titles |> 
+#   filter(str_detect(title, "preliminary")) |> 
+#   select(celex, title, origlang) |> 
+#   mutate(celex = case_when(celex == "62008CN0325(01)" ~ "62008CN0375",
+#                            celex == "62014CN00016" ~ "62014CN0016",
+#                            T ~ celex)) |> 
+#   mutate(case_year = as.integer(str_sub(celex, 2, 5)),
+#          case_no = as.integer(str_sub(celex, 8, 11)),
+#          case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)))
+# 
+# # country dictionary
+# countries <- tibble(country = accessions$country) |> 
+#   mutate(cntry_regex = country) |> 
+#   mutate(cntry_regex = case_when(
+#     country == "Czechia" ~ str_c(cntry_regex, "Czech Republic","Nejvyšš", sep = "|"),
+#     country == "Slovakia" ~ str_c(cntry_regex, "Slovak Republic","Najvyšš", "Prešov", sep = "|"),
+#     country == "Italy" ~ str_c(cntry_regex, "Italia","Tribunale Amministrativ","Tribunale di","Consiglio di", sep = "|"),
+#     country == "Poland" ~ str_c(cntry_regex, "Polish", sep = "|"),
+#     country == "France" ~ str_c(cntry_regex, "Conseil d", sep = "|"),
+#     country == "Belgium" ~ str_c(cntry_regex, "Belgique","Hof van Cassatie","Brussel", sep = "|"),
+#     country == "Ireland" ~ str_c(cntry_regex, "Irland", sep = "|"),
+#     country == "Austria" ~ str_c(cntry_regex, "Salzburg", sep = "|"),
+#     country == "Bulgaria" ~ str_c(cntry_regex, "Veliko Tarn", sep = "|"),
+#     country == "Spain" ~ str_c(cntry_regex, "Juzgado","Audiencia Provincial","Tribunal Superior de Justicia", sep = "|"),
+#     country == "Romania" ~ str_c(cntry_regex, "România", sep = "|"),
+#     country == "Croatia" ~ str_c(cntry_regex, "Rijeci", sep = "|"),
+#     country == "Greece" ~ str_c(cntry_regex, "Simvoulio", "Simboulio", sep = "|"),
+#     country == "Portugal" ~ str_c(cntry_regex, "Tribunal da Relação", sep = "|"),
+#     country == "Lithuania" ~ str_c(cntry_regex, "Lietuv", "Vilniaus", sep = "|"),
+#     country == "Latvia" ~ str_c(cntry_regex, "Latvijas","Augstākās", sep = "|"),
+#     country == "Hungary" ~ str_c(cntry_regex, "Magyar", "Bíróság", "Budapest","Szeged", sep = "|"),
+#     country == "Netherlands" ~ str_c(cntry_regex, "Den Haag","Raad van Ber","College van Bero","Rechtbank Amsterdam", "Raad van State", "Hoge Raad", sep = "|"),
+#     country == "United Kingdom" ~ str_c(cntry_regex, "England & Wales","England and Wales", sep = "|"),
+#     country == "Germany" ~ str_c(cntry_regex, "Deutschland","Regensburg", sep = "|"),
+#     T ~ cntry_regex
+#   ))
+# 
+# # extract country matrix
+# out_cntry <- sapply(
+#   X = str_to_lower(countries$cntry_regex),
+#   FUN = grepl,
+#   perl = TRUE,
+#   str_to_lower(cns_prels$title)
+# )
+# 
+# # retrieve pattern matches
+# matched_patterns_country_long <- as.data.frame(out_cntry) |> 
+#   bind_cols(celex = cns_prels$celex) |> 
+#   pivot_longer(cols = -celex) |> 
+#   filter(value == TRUE) |> 
+#   left_join(countries |> mutate(cntry_regex = str_to_lower(cntry_regex)), by = c("name"="cntry_regex")) |> 
+#   distinct(celex, country)
+#   
+# # wide format
+# matched_patterns_country_wide <- matched_patterns_country_long |> 
+#   mutate(value = 1L) |> 
+#   pivot_wider(names_from = country, names_prefix = "country_", 
+#               values_from = value, values_fill = 0L) |> 
+#   left_join(cns_prels)
+# 
+# # first regex match in the title
+# out_firstmatch <- cns_prels |> 
+#   mutate(cntry_regex = str_extract(str_to_lower(title),
+#                                    str_to_lower(str_c(countries$cntry_regex, collapse = "|")))) |> 
+#   left_join(
+#     countries |> 
+#       separate_rows(cntry_regex, sep = "\\|") |> 
+#       mutate(cntry_regex = str_to_lower(cntry_regex))
+#   )
+# 
+# # reconcile matches
+# ## improvement: use data on authentic language in correction
+# cns_matches <- matched_patterns_country_long |> 
+#   left_join(out_firstmatch |> rename(country_first = country)) |> 
+#   mutate(country_final = country_first,
+#          country_final = ifelse(is.na(country_final), country, country_final),
+#          country_final = ifelse(country == country_first & !is.na(country_first), country_first, country_final)) |> 
+#   distinct(case_id, country_final)
+# 
+# # attach
+# cns_prels_country <- cns_prels |> 
+#   left_join(cns_matches) |> 
+#   rename(country = country_final)
+#   # filter(is.na(country_final))
+# 
+# # country validation through origlang
+# cns_prels_country <- cns_prels_country |> 
+#   mutate(
+#     valid_lang = case_when(
+#      country == "Austria" & origlang %in% c("German","Slovenian") ~ T,
+#      country == "Belgium" & origlang %in% c("French","Dutch","German") ~ T,       
+#      country == "Bulgaria" & origlang == "Bulgarian" ~ T,      
+#      country == "Croatia" & origlang == "Croatian" ~ T,       
+#      country == "Cyprus" & origlang == "Greek" ~ T,        
+#      country == "Czechia" & origlang == "Czech" ~ T,       
+#      country == "Denmark" & origlang == "Danish" ~ T,       
+#      country == "Estonia" & origlang == "Estonian" ~ T,
+#      country == "Finland" & origlang == "Finnish" ~ T,       
+#      country == "France" & origlang == "French" ~ T,        
+#      country == "Germany" & origlang == "German" ~ T,       
+#      country == "Greece" & origlang == "Greek" ~ T,        
+#      country == "Hungary" & origlang == "Hungarian" ~ T,       
+#      country == "Ireland" & origlang %in% c("English","Irish") ~ T,       
+#      country == "Italy" & origlang %in% c("Italian","German") ~ T,         
+#      country == "Latvia" & origlang == "Latvian" ~ T,        
+#      country == "Lithuania" & origlang == "Lithuanian" ~ T,     
+#      country == "Luxembourg" & origlang %in% c("French","Luxembourgish","German") ~ T,   
+#      country == "Malta" & origlang %in% c("English","Maltese") ~ T,         
+#      country == "Netherlands" & origlang == "Dutch" ~ T,   
+#      country == "Poland" & origlang == "Polish" ~ T,
+#      country == "Portugal" & origlang == "Portuguese" ~ T, 
+#      country == "Romania" & origlang == "Romanian" ~ T,       
+#      country == "Slovakia" & origlang == "Slovak" ~ T,      
+#      country == "Slovenia" & origlang == "Slovenian" ~ T,      
+#      country == "Spain" & origlang == "Spanish" ~ T,         
+#      country == "Sweden" & origlang == "Swedish" ~ T,        
+#      country == "United Kingdom" & origlang == "English" ~ T,
+#      T ~ FALSE
+#     )
+#   )
+
+# check manually
+# cns_prels_country |> 
+#  filter(valid_lang == FALSE)
 
 ```
 
