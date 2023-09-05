@@ -515,7 +515,7 @@ datatable(n_cases_year_court)
 
 We can see that the increase in the work of the CJ and the GC was mostly gradual. Interestingly, the oursourcing of the civil service agenda to the CST did not prevent the GC's caseload from rising during its period of operation (the jurisdiction was subsequently returned to the GC).
 
-## Forecast
+# Forecasting {.tabset}
 
 As most other organizations, EU courts operate under a [budget constraint](https://doi.org/10.1007/s10657-021-09722-5) while facing some uncertainty about their future workload. When allocating its resources and preparing annual budgets, the CJEU needs to be able to forecast how many cases it is likely to have to deal with in the upcoming years.
 
@@ -526,6 +526,7 @@ Y_{t}^{CJ} = \beta_0 + \beta_1 Y_{t-1}^{CJ} + \beta_2 Y_{t-2}^{CJ} + \beta_3 Y_{
 $$
 Estimating the parameters in this equation via Gaussian or Poisson^[Because we are working with count data, Poisson regression should be in principle more appropriate.] regression provides a simple way of making predictions about $Y_t^{CJ}$.
 
+## Plot
 ```{r forecast}
 # design matrix, trim current year
 dat_reg <- n_cases_year_court_labs |> 
@@ -625,9 +626,24 @@ girafe(ggobj = iplot_cases_forecast,
 )
 ```
 
+## Table
+```{r forecastreg}
+modelsummary(list("OLS" = out_ols, "Poisson" = out_poi),
+             statistic = 'conf.int', 
+             conf_level = 0.95,
+             stars = TRUE,
+             title = "Predicting yearly caseload at CJ")
+```
+
+## {Code}
+```{r forecast, eval=FALSE, echo=TRUE}
+```
+
+# {-}
+
 Both Gaussian and Poission regression yield comparable predictions for ```r year_now``` (```r out_ols``` versus ```r out_ols``` cases). The actual number of cases received so far this year represents ```r round(n_cases_year_court_labs$n[n_cases_year_court_labs$case_year==year_now & n_cases_year_court_labs$court=="CJ"] / yhat_ols,2)*100``` % of the predicted number.
 
-In order to obtain a prediction for ```r year_now+1``` using our model, we can plug in our prediction for ```r year_now``` as $Y_{t-1}^{CJ}$. The result is shown in the interactive plot. However, should our first prediction turn out way off the mark, we will be compounding the error in our subsequent prediction. Ours is an overly simplistic forecasting model -- in the real-world, we would hope to rely on other information than merely past values of $Y_t$ to make predictions.
+In order to obtain a prediction for ```r year_now+1``` using our model, we can plug in our prediction for ```r year_now``` as $Y_{t-1}^{CJ}$. The result is shown in the interactive plot. However, should our first prediction turn out way off the mark, we will be compounding the error in our subsequent prediction. Ours is an overly simplistic forecasting model -- in the real-world, we would hope to rely on other information than merely past values of $Y_t$ to make predictions, as well as relax some model assumptions.
 
 # Cite
 
