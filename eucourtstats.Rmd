@@ -50,10 +50,10 @@ library(tidyr)
 library(stringr)
 library(forcats)
 library(rmarkdown)
-#library(modelsummary)
+library(modelsummary)
 library(ggiraph)
-#library(equatiomatic)
 library(DT)
+library(lubridate)
 
 # seed
 set.seed(35239)
@@ -211,7 +211,8 @@ curia_list <- curia_list |>
            str_detect(case_year, "^5|^6|^7|^8|^9") ~ as.integer(str_c("19", case_year)),
            T ~ NA_integer_
          ),
-         decision_year = as.integer(str_extract(ecli, "[:digit:]{4}")))
+         decision_year = as.integer(str_extract(ecli, "[:digit:]{4}"))) |> 
+  mutate(decision_date = str_extract(case_info, "[:digit:]{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) (19|20)[:digit:]{2}"))
   #filter(is.na(ecli), is.na(see_case))
   #filter(is.na(case_status)) |> View()
   #count(case_status) |> arrange(-n)
@@ -425,7 +426,7 @@ n_cases_year_court <- curia_list |>
 
 <br>
 
-The Court of Justice of the European Union is the principal judicial institution of the European Union (EU). It consists of two courts: the somewhat confusingly named, higher-instance Court of Justice (CJ) and the lower-instance General Court (GC). There used to be a third court, the Civil Service Tribunal (CST), which was abolished and whose jurisdiction was transferred to the GC.
+The Court of Justice of the European Union (CJEU) is the principal judicial institution of the European Union (EU). It consists of two courts: the somewhat confusingly named, higher-instance Court of Justice (CJ) and the lower-instance General Court (GC). There used to be a third court, the Civil Service Tribunal (CST), which was abolished and whose jurisdiction was transferred to the GC.
 
 This automatically updated research document gives a real-time overview of the EU courts' output and engagement with national courts through the preliminary ruling procedure. It relies on data collected via the [eurlex](https://github.com/michalovadek/eurlex) package for R^[For more details see the [website](https://github.com/michalovadek/eurlex). More example use cases, as well as arguments for integrating open data APIs into research workflows, can be found in this [open-access paper](https://www.tandfonline.com/doi/full/10.1080/2474736X.2020.1870150).] Because neither [Eur-Lex](https://eur-lex.europa.eu/homepage.html) nor [Curia](https://curia.europa.eu/juris/) contains the complete record of all court proceedings and documents, the data presented below should be viewed as a reasonable approximation of the true state of the world.^[The [IUROPA](https://iuropa.pol.gu.se/) project is attempting to create more comprehensive datasets.]
 
@@ -442,8 +443,8 @@ court_palette <-
   tibble(court = fct_inorder(factor(c("CJ", "GC", "CST"))),
          color = fct_inorder(factor(c("#fd014d", "#122771", "#3dcbb8"))))
 
-# plot
-iplot_cases_year_court <- n_cases_year_court |> 
+# add labels
+n_cases_year_court_labs <- n_cases_year_court |> 
   mutate(court_long = case_when(
     court == "CJ" ~ "Court of Justice",
     court == "GC" ~ "General Court",
@@ -453,7 +454,10 @@ iplot_cases_year_court <- n_cases_year_court |>
   mutate(court_long = fct_relevel(court_long, "Court of Justice", "General Court"),
          tooltip = str_c("N = ", n, " (", case_year, ")"),
          data_id = str_c(court, case_year)) |> 
-  left_join(court_palette) |> 
+  left_join(court_palette)
+
+# plot
+iplot_cases_year_court <- n_cases_year_court_labs |> 
   group_by(court) |> 
   mutate(global_mean = mean(n)) |> 
   ggplot(aes(x = case_year, y = n, fill = color)) +
@@ -489,7 +493,7 @@ girafe(ggobj = iplot_cases_year_court,
                       opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
                                    use_fill = TRUE),
                       opts_hover_inv(css = "opacity:0.1;"),
-                      opts_hover(css = "fill:black;"))
+                      opts_hover(css = "fill:gray;stroke:black;"))
 )
 ```
 
@@ -510,6 +514,120 @@ datatable(n_cases_year_court)
 # {-}
 
 We can see that the increase in the work of the CJ and the GC was mostly gradual. Interestingly, the oursourcing of the civil service agenda to the CST did not prevent the GC's caseload from rising during its period of operation (the jurisdiction was subsequently returned to the GC).
+
+## Forecast
+
+As most other organizations, EU courts operate under a [budget constraint](https://doi.org/10.1007/s10657-021-09722-5) while facing some uncertainty about their future workload. When allocating its resources and preparing annual budgets, the CJEU needs to be able to forecast how many cases it is likely to have to deal with in the upcoming years.
+
+With information on the number of cases received in the past in hand, we can create a simple model that will attempt to predict the number of cases this year and next. In the presence of significant autocorrelation, using the number of cases received in previous years as predictors (lags) should give us decent forecasting mileage. To account for the fact that the CJ's caseload is linked to the GC's through appeal procedures, a regression equation can also include a lagged term for GC cases:
+
+$$
+Y_{t}^{CJ} = \beta_0 + \beta_1 Y_{t-1}^{CJ} + \beta_2 Y_{t-2}^{CJ} + \beta_3 Y_{t-3}^{CJ} + \beta_4 Y_{t-3}^{GC} + \epsilon_t
+$$
+Estimating the parameters in this equation via Gaussian or Poisson^[Because we are working with count data, Poisson regression should be in principle more appropriate.] regression provides a simple way of making predictions about $Y_t^{CJ}$.
+
+```{r forecast}
+# design matrix, trim current year
+dat_reg <- n_cases_year_court_labs |> 
+  filter(case_year > 1994,
+         court != "CST") |> 
+  mutate(lag1 = lag(n),
+         lag2 = lag(n, 2),
+         lag3 = lag(n, 3),
+         lag4 = lag(n, 4),
+         lag5 = lag(n, 5)) |> 
+  filter(case_year > 2000) |> 
+  select(court, case_year, n, starts_with("lag")) |> 
+  pivot_wider(id_cols = case_year, names_from = court, values_from = c(n, starts_with("lag")))
+
+# OLS estimates
+out_ols <- lm(
+  data = dat_reg |> filter(case_year < year_now),
+  formula = n_CJ ~ lag1_CJ + lag2_CJ + lag3_CJ + lag3_GC
+)
+
+# Poisson estimates
+out_poi <- glm(
+  data = dat_reg |> filter(case_year < year_now),
+  family = poisson(),
+  formula = n_CJ ~ lag1_CJ + lag2_CJ + lag3_CJ + lag3_GC
+)
+
+# OLS prediction
+yhat_ols <- as.integer(round(predict(out_ols, dat_reg[nrow(dat_reg),], type = "response"), 0))
+
+# Poisson prediction
+yhat_poi <- as.integer(round(predict(out_poi, dat_reg[nrow(dat_reg),], type = "response"), 0))
+
+# OLS prediction at t+1
+newdat_t1 <- tibble(
+  case_year = year_now + 1,
+  lags = dat_reg[nrow(dat_reg),] |> select(starts_with("lag")) |> as.vector() |> unlist() |> lag(2),
+  cols = dat_reg[nrow(dat_reg),] |> select(starts_with("lag")) |> colnames()
+) |> 
+  pivot_wider(names_from = cols, values_from = lags, values_fill = 0L)
+newdat_t1$lag1_CJ <- (yhat_ols + yhat_poi)/2 + sum(newdat_t1 |> select(contains("CJ")) |> unlist() |> diff(), na.rm = T)
+yhat_ols_t1 <- as.integer(round(predict(out_ols, newdat_t1, type = "response"), 0))
+
+# plot
+iplot_cases_forecast <- n_cases_year_court_labs |> 
+  mutate(tooltip = str_remove(tooltip, " \\(.*")) |> 
+  filter(case_year > year_now - 7,
+         court == "CJ") |> 
+  ggplot(aes(x = case_year, y = n)) + 
+  geom_col(data = tibble(case_year = year_now, n = yhat_ols),
+           aes(color = court_palette$color[court_palette$court == "CJ"],
+               fill = court_palette$color[court_palette$court == "CJ"]),
+           alpha = 0.15,
+           lty = 2,
+           show.legend = FALSE) +
+  geom_col_interactive(data = tibble(case_year = year_now+1,
+                         n = yhat_ols_t1, 
+                         tooltip = str_c("Predicted N = ", n),
+                         data_id = case_year),
+           aes(color = court_palette$color[court_palette$court == "CJ"],
+               fill = court_palette$color[court_palette$court == "CJ"],
+               tooltip = tooltip,
+               data_id = data_id),
+           alpha = 0.15,
+           lty = 2,
+           show.legend = FALSE) +
+  geom_col_interactive(aes(fill = color, tooltip = tooltip, data_id = case_year)) +
+  scale_fill_identity() +
+  scale_x_continuous(breaks = (year_now-7):(year_now+1)) +
+  theme_minimal(base_family = "Arial") + 
+  theme(panel.grid = element_blank(),
+        panel.grid.major.y = element_line(color = "grey94"),
+        #panel.grid.major.x = element_line(color = "grey94"),
+        axis.text = element_text(color = "grey10"),
+        axis.text.x = element_text(margin = margin(t = -6)),
+        plot.background = element_rect(fill = "white", color = "grey88"),
+        title = element_text(face = "bold"),
+        plot.subtitle = element_text(face = "italic"),
+        plot.caption = element_text(face = "italic", size = 8),
+        strip.text = element_text(hjust = 1, face = "bold")) +
+  labs(x = NULL, y = NULL,
+       title = "Number of cases received by the Court of Justice",
+       subtitle = "Forecast of this year and next based on previous years",
+       caption = "Predictions in dashed boundaries")
+
+# interactive
+girafe(ggobj = iplot_cases_forecast,
+       fonts = list(sans = "Arial"),
+       #width_svg = 12,
+       #height_svg = 8,
+       options = list(opts_sizing(rescale = TRUE),
+                      opts_toolbar(saveaspng = FALSE),
+                      opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
+                                   use_fill = TRUE),
+                      opts_hover_inv(css = "opacity:0.2;"),
+                      opts_hover(css = "fill:#fd014d;opacity:0.99;stroke:black;"))
+)
+```
+
+Both Gaussian and Poission regression yield comparable predictions for ```r year_now``` (```r out_ols``` versus ```r out_ols``` cases). The actual number of cases received so far this year represents ```r round(n_cases_year_court_labs$n[n_cases_year_court_labs$case_year==year_now & n_cases_year_court_labs$court=="CJ"] / yhat_ols,2)*100``` % of the predicted number.
+
+In order to obtain a prediction for ```r year_now+1``` using our model, we can plug in our prediction for ```r year_now``` as $Y_{t-1}^{CJ}$. The result is shown in the interactive plot. However, should our first prediction turn out way off the mark, we will be compounding the error in our subsequent prediction. Ours is an overly simplistic forecasting model -- in the real-world, we would hope to rely on other information than merely past values of $Y_t$ to make predictions.
 
 # Cite
 
