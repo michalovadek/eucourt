@@ -641,7 +641,7 @@ modelsummary(list("OLS" = out_ols, "Poisson" = out_poi),
 
 # {-}
 
-Both Gaussian and Poission regression yield comparable predictions for ```r year_now``` (```r out_ols``` versus ```r out_ols``` cases). The actual number of cases received so far this year represents ```r round(n_cases_year_court_labs$n[n_cases_year_court_labs$case_year==year_now & n_cases_year_court_labs$court=="CJ"] / yhat_ols,2)*100``` % of the predicted number.
+Both Gaussian and Poission regression yield comparable predictions for ```r year_now``` (```r yhat_ols``` versus ```r yhat_poi``` cases). The actual number of cases received so far this year represents ```r round(n_cases_year_court_labs$n[n_cases_year_court_labs$case_year==year_now & n_cases_year_court_labs$court=="CJ"] / yhat_ols,2)*100``` % of the predicted number.
 
 In order to obtain a prediction for ```r year_now+1``` using our model, we can plug in our prediction for ```r year_now``` as $Y_{t-1}^{CJ}$. The result is shown in the interactive plot. However, should our first prediction turn out way off the mark, we will be compounding the error in our subsequent prediction. Ours is an overly simplistic forecasting model -- in the real-world, we would hope to rely on other information than merely past values of $Y_t$ to make predictions, as well as relax some model assumptions.
 
