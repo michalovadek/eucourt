@@ -258,7 +258,7 @@ curia_list |>
   datatable()
 ```
 
-# Temporal variation {.tabset}
+# Number of cases {.tabset}
 
 Even more than any [other branch](https://michalovadek.github.io/eulaw/) of the EU, the CJEU's caseload changed dramatically over the course of European integration. In 1953 -- the first year of its functioning -- the CJ received ```r n_cases_year_court$n[n_cases_year_court$court=="CJ"&n_cases_year_court$case_year==1953]``` cases. Last year (```r year_now-1```), it received ```r n_cases_year_court$n[n_cases_year_court$court=="CJ"&n_cases_year_court$case_year==year_now-1]```, while the GC received ```r n_cases_year_court$n[n_cases_year_court$court=="GC"&n_cases_year_court$case_year==year_now-1]```.
 
@@ -585,17 +585,30 @@ decisions <- decisions |>
     clx_court == "F" ~ "Civil Service Tribunal",
     T ~ NA_character_
   )) |> 
-  mutate(court_long = fct_relevel(court_long, "Court of Justice", "General Court"))
+  mutate(court_long = fct_relevel(court_long, "Court of Justice", "General Court")) |> 
+  mutate(formation_simple = case_when(
+    str_detect(formation, "Grand Chamber") ~ "Grand Chamber",
+    str_detect(formation, "[Ff]ull [Cc]ourt") ~ "Full Court",
+    str_detect(formation, "Single|Vice-President|President|Judge hearing") ~ "Single Judge",
+    T ~ "Panel"
+  )) |> 
+  mutate(formation_simple = fct_relevel(formation_simple, "Full Court", "Grand Chamber", "Panel", "Single Judge")) |> 
+  mutate(decision_year = str_sub(date, 1, 4)) |> 
+  mutate(rapporteur = case_when( # correct some rapporteurs
+    str_detect(rapporteur, "O.Higgins") ~ "OHiggins",
+    str_detect(rapporteur, "O'Keeffe") ~ "OKeeffe",
+    str_detect(rapporteur, "Cz.cz") ~ "Czucz",
+    str_detect(rapporteur, ".an .er Woude") ~ "van der Woude",
+    T ~ rapporteur
+  ))
 
-# code appeals
-# simplify outcomes
+# appeals and outcomes
+
 ```
 
 The number of cases received by EU courts is not identical to the number of judicial decisions they produce. Some cases are withdrawn by the applicants or otherwise discontinued, others are joined and decided together.
 
 The EU judicial system distinguishes between different types of public decisions. The two most common types are judgments and orders. Orders are typically employed to settle disputes more "economically" -- they normally contain a shorter justification and address broadly speaking less important issues.
-
-Decisions can be further grouped by procedure and court formation. The most important cases at the CJ are decided by more than ten judges in a formation known as the "Grand Chamber". On special occasions, the CJ even sits as the "Full Court" (all judges decide).
 
 We can get an approximate overview of the number of decisions produced by EU courts using the Eur-Lex API.
 
@@ -603,7 +616,6 @@ We can get an approximate overview of the number of decisions produced by EU cou
 ```{r decisiontypeplot}
 # data frame for plotting
 n_dec_type_proc <- decisions |> 
-  mutate(decision_year = str_sub(date, 1, 4)) |> 
   filter(decision != "Opinion",
          procedure_class != "Other",
          clx_court == "C") |> 
@@ -613,7 +625,7 @@ n_dec_type_proc <- decisions |>
 # make plot
 iplot_dec_procs <- n_dec_type_proc |> 
   left_join(court_palette) |> 
-  mutate(tooltip = str_c("N ", decision, " = ", n, " (", decision_year, ")"),
+  mutate(tooltip = str_c(decision, "s = ", n, " (", decision_year, ")"),
          data_id = str_c(clx_court, decision_year, procedure_class, decision)) |> 
   ggplot(aes(x = as.integer(decision_year), y = n, fill = decision)) +
   geom_col_interactive(color = "grey96", show.legend = FALSE,
@@ -668,9 +680,130 @@ datatable(n_dec_type_proc)
 
 The Court of Justice sees the highest diversity of procedures, even though the General Court is set to adjudicate a greater variety of cases in the future in response to workload pressures and past court reforms.
 
-The four main types of procedures are the preliminary ruling procedure, the annulment procedure, the infringement procedure (Article 258 TFEU) and staff cases. We can see that the CJ has been handing down a seemingly ever-increasing number of preliminary rulings on questions referred by national courts.
+The four main types of procedures are the preliminary ruling procedure (Article 267 TFEU), the annulment procedure (Article 263 TFEU), the infringement procedure (Article 258 TFEU) and staff cases. We can see that the CJ has been handing down a seemingly ever-increasing number of preliminary rulings on questions referred by national courts. As the CJ's workload expanded, the Court increased the frequency with which it uses orders rather than judgments.
 
-As the CJ's workload expanded, the Court increased the frequency with which it uses orders rather than judgments.
+```{r formationproportion}
+# plot
+iplot_dec_formation <- decisions |> 
+  filter(clx_court == "C") |> 
+  count(decision_year, formation_simple) |> 
+  filter(as.integer(decision_year) > 2004) |> 
+  group_by(decision_year) |> 
+  mutate(sum_n = sum(n),
+         prop = n / sum(n)) |> 
+  ungroup() |> 
+  mutate(tooltip = str_c(formation_simple, " = ", round(prop, 3)*100, "% (", decision_year, ")"),
+         data_id = str_c(decision_year, formation_simple)) |> 
+  ggplot(aes(x = as.integer(decision_year), y = prop, fill = formation_simple)) + 
+  geom_col_interactive(color = "grey96", show.legend = FALSE,
+                       aes(tooltip = tooltip, data_id = data_id)) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual_interactive(values = c("#e63c88","#fd014d","#fe99b8","#b10136")) +
+  scale_x_continuous(breaks = seq(from = 2005, to = year_now+1, by = 3)) +
+  theme_minimal(base_family = "Arial") +
+  theme(panel.grid = element_blank(),
+        panel.grid.major.y = element_line(color = "grey94"),
+        panel.grid.major.x = element_line(color = "grey94"),
+        axis.text = element_text(color = "grey10"),
+        plot.background = element_rect(fill = "white", color = "grey88"),
+        title = element_text(face = "bold"),
+        plot.subtitle = element_text(face = "italic"),
+        plot.caption = element_text(face = "italic", size = 8),
+        strip.text = element_text(hjust = 1, face = "bold")) +
+  labs(x = NULL, y = NULL,
+       title = "Proportion of decisions by formation",
+       subtitle = "Data for the Court of Justice")
+
+# interactive
+girafe(ggobj = iplot_dec_formation,
+       fonts = list(sans = "Arial"),
+       #width_svg = 12,
+       #height_svg = 8,
+       options = list(opts_sizing(rescale = TRUE),
+                      opts_toolbar(saveaspng = FALSE),
+                      opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
+                                   use_fill = TRUE),
+                      opts_hover_inv(css = "opacity:0.2;"),
+                      opts_hover(css = "opacity:0.99;stroke:black;")))
+```
+
+Decisions can be further classified by the deciding court formation. The most important cases at the CJ are decided by more than ten judges in a formation known as the "Grand Chamber". On special occasions, the CJ even sits as the "Full Court" (all judges decide). Most cases are decided by a panel (chamber) of five judges.
+
+```{r rapporteurs}
+# pick top rapporteurs to show
+top_rapps <- decisions |> 
+  filter(clx_court %in% c("C","T"),
+         procedure_class != "Other",
+         decision == "Judgment") |> # too many orders missing 
+  mutate(inv_court = ifelse(clx_court == "C", "  ", " ")) |> 
+  mutate(rapporteur = str_c(inv_court, rapporteur)) |> 
+  count(court_long, rapporteur) |> 
+  drop_na() |> 
+  mutate(sum = sum(n), .by = c(court_long, rapporteur)) |> 
+  arrange(-sum) |> 
+  group_by(court_long) |> 
+  slice_head(n = 20) |> 
+  ungroup()
+
+# plot
+iplot_dec_rapp <- decisions |> 
+  filter(clx_court %in% c("C","T"),
+         procedure_class != "Other",
+         decision == "Judgment") |> # too many orders missing 
+  mutate(inv_court = ifelse(clx_court == "C", "  ", " ")) |> 
+  mutate(rapporteur = str_c(inv_court, rapporteur)) |> 
+  filter(rapporteur %in% top_rapps$rapporteur) |>  
+  count(court_long, rapporteur, procedure_class) |> 
+  drop_na() |> 
+  mutate(sum = sum(n), .by = c(court_long, rapporteur)) |> 
+  arrange(-sum) |> 
+  left_join(court_palette) |> 
+  mutate(color = case_when(
+    court == "CJ" & procedure_class == "Staff cases" ~ "#ffe6ed",
+    court == "CJ" & procedure_class == "Preliminary rulings" ~ "#fe99b8",
+    court == "CJ" & procedure_class == "Infringement proceedings" ~ "#fe6794",
+    court == "GC" & procedure_class == "Staff cases" ~ "#8993b8",
+    T ~ color
+  )) |> 
+  mutate(tooltip = str_c(procedure_class, " = ", n, " (", str_squish(rapporteur),")"),
+         data_id = str_c(court_long, rapporteur, procedure_class)) |>
+  ggplot(aes(x = n, y = reorder(rapporteur, sum), fill = color)) +
+  geom_col_interactive(color = "grey96", show.legend = FALSE,
+                       aes(tooltip = tooltip, data_id = data_id),
+                       position = "stack"
+                       ) +
+  scale_fill_identity() +
+  scale_y_discrete(expand = expansion(0, 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~court_long, dir = "v", scales = "free") +
+  theme_minimal(base_family = "Arial") +
+  theme(panel.grid = element_blank(),
+        panel.grid.major.y = element_line(color = "grey94"),
+        panel.grid.major.x = element_line(color = "grey94"),
+        axis.text = element_text(color = "grey10"),
+        plot.background = element_rect(fill = "white", color = "grey88"),
+        title = element_text(face = "bold"),
+        plot.subtitle = element_text(face = "italic"),
+        plot.caption = element_text(face = "italic", size = 8),
+        strip.text = element_text(hjust = 1, face = "bold")) +
+  labs(x = NULL, y = NULL,
+       title = "The most frequent judge-rapporteurs",
+       subtitle = "Only taking into account judgments and main procedures")
+
+# interactive
+girafe(ggobj = iplot_dec_rapp,
+       fonts = list(sans = "Arial"),
+       #width_svg = 12,
+       #height_svg = 8,
+       options = list(opts_sizing(rescale = TRUE),
+                      opts_toolbar(saveaspng = FALSE),
+                      opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
+                                   use_fill = TRUE),
+                      opts_hover_inv(css = "opacity:0.2;"),
+                      opts_hover(css = "opacity:0.99;stroke:black;")))
+```
+
+Each decision is assigned a judge-rapporteur. This judge has the primary responsibility for drafting the decision. The main predictor of how many decisions a judge writes is the length of their tenure at the court. In principle, judges can be reappointed to EU courts any number of times.
 
 # Preliminary references
 
