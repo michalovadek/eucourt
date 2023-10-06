@@ -54,6 +54,7 @@ library(modelsummary)
 library(ggiraph)
 library(DT)
 library(lubridate)
+library(maps)
 
 # seed
 set.seed(35239)
@@ -438,7 +439,7 @@ iplot_cases_forecast <- n_cases_year_court_labs |>
   labs(x = NULL, y = NULL,
        title = "Number of cases received by the Court of Justice",
        subtitle = "Forecast of this year and next based on previous years",
-       caption = "Predictions in dashed boundaries")
+       caption = "Predictions in dashed outlines")
 
 # interactive
 girafe(ggobj = iplot_cases_forecast,
@@ -564,6 +565,36 @@ missing_procs_titles <- missing_procs_titles |>
       str_detect(celex, "FB") | str_detect(title, "damages") ~ "Action for damages",
       str_detect(title, " (v|contre) (European Commission|Commission|Council|European Parliament|Parliament|EUIPO|OHIM|OHMI|ECB|Office for Har|European Union|Office de l'|EASO|EMA)") ~ "Action for annulment", # this is too broad but probably OK as approximation
       T ~ NA_character_
+    ),
+    origin = case_when(
+      str_detect(title, "Czech Republic|Nejvyšš|Czechia") ~ "Czechia",
+      str_detect(title, "Slovak Republic|Najvyšš|Prešov|Slovakia") ~ "Slovakia",
+      str_detect(title, "Polish|Poland") ~ "Poland",
+      str_detect(title, "Belgiqu|Hof van Cass|Brussel|Belgium") ~ "Belgium",
+      str_detect(title, "Finland") ~ "Finland",
+      str_detect(title, "Salzburg|Wien|Austria") ~ "Austria",
+      str_detect(title, "Veliko Tarn|Varna|Bulgaria|Sofiys") ~ "Bulgaria",
+      str_detect(title, "Juzgado|Audiencia Provincial|Tribunal Superior de Justicia|Spain") ~ "Spain",
+      str_detect(title, "România|Romania") ~ "Romania",
+      str_detect(title, "Rijeci|Croati|lučice") ~ "Croatia",
+      str_detect(title, "Slovenia") ~ "Slovenia",
+      str_detect(title, "Cyprus") ~ "Cyprus",
+      str_detect(title, "Estonia") ~ "Estonia",
+      str_detect(title, "Sweden") ~ "Sweden",
+      str_detect(title, "Luxembourg") ~ "Luxembourg",
+      str_detect(title, "Denmark|Dane?mark") ~ "Denmark",
+      str_detect(title, "Hellenic|Greece|Simvoulio|Simboulio") ~ "Greece",
+      str_detect(title, "Portugese|Tribunal da Relação|(?<!TAP )Portugal") ~ "Portugal",
+      str_detect(title, "Lietuv|Vilniaus|Lithuania") ~ "Lithuania",
+      str_detect(title, "Latvijas|Augstākās|Latvia") ~ "Latvia",
+      str_detect(title, "Italia|Italy|Tribunale Amministrativ|Tribunale di|Consiglio di|Corte Su") ~ "Italy",
+      str_detect(title, "Bíróság|Magyar|Budapest|Szeged|Hungary|Hongri") ~ "Hungary",
+      str_detect(title, "Conseil d|(?<!Air )France") ~ "France",
+      str_detect(title, "Irland|(?<!Northern )Ireland") ~ "Ireland",
+      str_detect(title, "Netherlands|Den Haag|Raad van Ber|College van|Rechtbank Am|Raad [Vv]an St|Hoge Raad") ~ "Netherlands",
+      str_detect(title, "England \\& Wales|England and Wales|Her Majest|United Kingdom") ~ "United Kingdom",
+      str_detect(title, "Deutschland|Regensburg|Germany|Landgericht K|Amtsgericht") ~ "Germany",
+      T ~ NA_character_
     )
   )
 
@@ -601,6 +632,32 @@ decisions <- decisions |>
     str_detect(rapporteur, ".an .er Woude") ~ "van der Woude",
     T ~ rapporteur
   ))
+
+# some manual corrections
+decisions <- decisions |> 
+  filter(!celex %in% c("62019CO0519")) |> # corrigendum
+  mutate(
+    origin = case_when(
+      celex == "62019CJ0550" ~ "Spain",
+      celex == "62020CJ0339" ~ "France",
+      celex == "62014CB0196" ~ "Germany",
+      celex == "62022CB0578" ~ "Germany",
+      celex == "62023CB0052" ~ "Germany",
+      T ~ origin
+      ),
+    language = case_when(
+      celex == "62017CO0707" ~ "Bulgarian",
+      celex == "62020CJ0306" ~ "Latvian",
+      celex == "62017CJ0122" ~ "English",
+      celex == "62018CJ0276" ~ "Hungarian",
+      celex == "62013CJ0512" ~ "Dutch",
+      celex == "62022CJ0142" ~ "English",
+      celex == "61987CJ0245" ~ "German",
+      celex == "62000CJ0167" ~ "German",
+      celex == "62012CJ0293" ~ "English~~~German",
+      T ~ language
+    )
+  )
 
 # appeals and outcomes
 
@@ -805,192 +862,186 @@ girafe(ggobj = iplot_dec_rapp,
 
 Each decision is assigned a judge-rapporteur. This judge has the primary responsibility for drafting the decision. The main predictor of how many decisions a judge writes is the length of their tenure at the court. In principle, judges can be reappointed to EU courts any number of times.
 
-# Preliminary references
+# Preliminary references {.tabset}
 
+Historically the most important subset of CJEU cases is generated through the preliminary ruling procedure (Article 267 TFEU). The most well-known CJ decisions -- such as _Costa v ENEL_ and _Cassis de Dijon_ -- originate in references from national courts to Luxembourg.
+
+## Plot
 ```{r prelrefdata}
 
-# 
-# # subset data to only prel references, 1 row =  1 reference (ie unpack joint decisions), country-year
-# prelrefs <- allcourt |> 
-#   filter(str_sub(celex, 6, 6) == "C") |> 
-#   filter(str_detect(courtprocedure, "Reference")) |> 
-#   filter(!is.na(courtorigin)) |> 
-#   mutate(case_no = as.integer(str_sub(celex, 8, 11)),
-#          case_year = as.integer(str_sub(celex, 2, 5)),
-#          case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)),
-#          decision_year = as.integer(str_sub(ecli, 11, 14)),
-#          decision_type = str_sub(celex, 6, 7)) |> 
-#   mutate(decision_type = fct_infreq(decision_type)) |> 
-#   arrange(decision_type) |> 
-#   distinct(case_id, case_year, courtorigin) |> 
-#   count(case_year, courtorigin) |> 
-#   rename(year = case_year,
-#          country = courtorigin)
-#   #mutate(n = n(), .by = case_id) |> 
-#   #arrange(-n, case_id)
-# 
-# # full panel of country x year observations
-# prelrefs_panel <- prelrefs |> 
-#   expand(country, year = 1958:year_now) |> 
-#   left_join(prelrefs) |> 
-#   mutate(n = ifelse(is.na(n), 0L, n))
-# 
-# # attach accessions
-# prelrefs_panel <- prelrefs_panel |> 
-#   arrange(country, year) |> 
-#   left_join(accessions) |> 
-#   fill(eumember, .direction = "down") |> 
-#   mutate(eumember = ifelse(is.na(eumember), 0L, eumember)) |> 
-#   mutate(eumember = ifelse(year > 2019 & country == "United Kingdom", 0L, eumember)) |> # brexit correction > 2019 0L
-#   rename(n_refs = n)
-# 
-# # data - information notices ----------------------------------------------
-# 
-# # judicial information for CJ
-# cns <- allcourt |>
-#   filter(str_detect(celex, "CN"))
-# 
-# # add titles
-# cns_titles <- cns |> 
-#   mutate(title = purrr::map_chr(work, ~elx_fetch_data(., "title")))
-# 
-# # find prel references
-# cns_prels <- cns_titles |> 
-#   filter(str_detect(title, "preliminary")) |> 
-#   select(celex, title, origlang) |> 
-#   mutate(celex = case_when(celex == "62008CN0325(01)" ~ "62008CN0375",
-#                            celex == "62014CN00016" ~ "62014CN0016",
-#                            T ~ celex)) |> 
-#   mutate(case_year = as.integer(str_sub(celex, 2, 5)),
-#          case_no = as.integer(str_sub(celex, 8, 11)),
-#          case_id = str_c(case_no, "/", str_sub(case_year, 3, 4)))
-# 
-# # country dictionary
-# countries <- tibble(country = accessions$country) |> 
-#   mutate(cntry_regex = country) |> 
-#   mutate(cntry_regex = case_when(
-#     country == "Czechia" ~ str_c(cntry_regex, "Czech Republic","Nejvyšš", sep = "|"),
-#     country == "Slovakia" ~ str_c(cntry_regex, "Slovak Republic","Najvyšš", "Prešov", sep = "|"),
-#     country == "Italy" ~ str_c(cntry_regex, "Italia","Tribunale Amministrativ","Tribunale di","Consiglio di", sep = "|"),
-#     country == "Poland" ~ str_c(cntry_regex, "Polish", sep = "|"),
-#     country == "France" ~ str_c(cntry_regex, "Conseil d", sep = "|"),
-#     country == "Belgium" ~ str_c(cntry_regex, "Belgique","Hof van Cassatie","Brussel", sep = "|"),
-#     country == "Ireland" ~ str_c(cntry_regex, "Irland", sep = "|"),
-#     country == "Austria" ~ str_c(cntry_regex, "Salzburg", sep = "|"),
-#     country == "Bulgaria" ~ str_c(cntry_regex, "Veliko Tarn", sep = "|"),
-#     country == "Spain" ~ str_c(cntry_regex, "Juzgado","Audiencia Provincial","Tribunal Superior de Justicia", sep = "|"),
-#     country == "Romania" ~ str_c(cntry_regex, "România", sep = "|"),
-#     country == "Croatia" ~ str_c(cntry_regex, "Rijeci", sep = "|"),
-#     country == "Greece" ~ str_c(cntry_regex, "Simvoulio", "Simboulio", sep = "|"),
-#     country == "Portugal" ~ str_c(cntry_regex, "Tribunal da Relação", sep = "|"),
-#     country == "Lithuania" ~ str_c(cntry_regex, "Lietuv", "Vilniaus", sep = "|"),
-#     country == "Latvia" ~ str_c(cntry_regex, "Latvijas","Augstākās", sep = "|"),
-#     country == "Hungary" ~ str_c(cntry_regex, "Magyar", "Bíróság", "Budapest","Szeged", sep = "|"),
-#     country == "Netherlands" ~ str_c(cntry_regex, "Den Haag","Raad van Ber","College van Bero","Rechtbank Amsterdam", "Raad van State", "Hoge Raad", sep = "|"),
-#     country == "United Kingdom" ~ str_c(cntry_regex, "England & Wales","England and Wales", sep = "|"),
-#     country == "Germany" ~ str_c(cntry_regex, "Deutschland","Regensburg", sep = "|"),
-#     T ~ cntry_regex
-#   ))
-# 
-# # extract country matrix
-# out_cntry <- sapply(
-#   X = str_to_lower(countries$cntry_regex),
-#   FUN = grepl,
-#   perl = TRUE,
-#   str_to_lower(cns_prels$title)
-# )
-# 
-# # retrieve pattern matches
-# matched_patterns_country_long <- as.data.frame(out_cntry) |> 
-#   bind_cols(celex = cns_prels$celex) |> 
-#   pivot_longer(cols = -celex) |> 
-#   filter(value == TRUE) |> 
-#   left_join(countries |> mutate(cntry_regex = str_to_lower(cntry_regex)), by = c("name"="cntry_regex")) |> 
-#   distinct(celex, country)
-#   
-# # wide format
-# matched_patterns_country_wide <- matched_patterns_country_long |> 
-#   mutate(value = 1L) |> 
-#   pivot_wider(names_from = country, names_prefix = "country_", 
-#               values_from = value, values_fill = 0L) |> 
-#   left_join(cns_prels)
-# 
-# # first regex match in the title
-# out_firstmatch <- cns_prels |> 
-#   mutate(cntry_regex = str_extract(str_to_lower(title),
-#                                    str_to_lower(str_c(countries$cntry_regex, collapse = "|")))) |> 
-#   left_join(
-#     countries |> 
-#       separate_rows(cntry_regex, sep = "\\|") |> 
-#       mutate(cntry_regex = str_to_lower(cntry_regex))
-#   )
-# 
-# # reconcile matches
-# ## improvement: use data on authentic language in correction
-# cns_matches <- matched_patterns_country_long |> 
-#   left_join(out_firstmatch |> rename(country_first = country)) |> 
-#   mutate(country_final = country_first,
-#          country_final = ifelse(is.na(country_final), country, country_final),
-#          country_final = ifelse(country == country_first & !is.na(country_first), country_first, country_final)) |> 
-#   distinct(case_id, country_final)
-# 
-# # attach
-# cns_prels_country <- cns_prels |> 
-#   left_join(cns_matches) |> 
-#   rename(country = country_final)
-#   # filter(is.na(country_final))
-# 
-# # country validation through origlang
-# cns_prels_country <- cns_prels_country |> 
-#   mutate(
-#     valid_lang = case_when(
-#      country == "Austria" & origlang %in% c("German","Slovenian") ~ T,
-#      country == "Belgium" & origlang %in% c("French","Dutch","German") ~ T,       
-#      country == "Bulgaria" & origlang == "Bulgarian" ~ T,      
-#      country == "Croatia" & origlang == "Croatian" ~ T,       
-#      country == "Cyprus" & origlang == "Greek" ~ T,        
-#      country == "Czechia" & origlang == "Czech" ~ T,       
-#      country == "Denmark" & origlang == "Danish" ~ T,       
-#      country == "Estonia" & origlang == "Estonian" ~ T,
-#      country == "Finland" & origlang == "Finnish" ~ T,       
-#      country == "France" & origlang == "French" ~ T,        
-#      country == "Germany" & origlang == "German" ~ T,       
-#      country == "Greece" & origlang == "Greek" ~ T,        
-#      country == "Hungary" & origlang == "Hungarian" ~ T,       
-#      country == "Ireland" & origlang %in% c("English","Irish") ~ T,       
-#      country == "Italy" & origlang %in% c("Italian","German") ~ T,         
-#      country == "Latvia" & origlang == "Latvian" ~ T,        
-#      country == "Lithuania" & origlang == "Lithuanian" ~ T,     
-#      country == "Luxembourg" & origlang %in% c("French","Luxembourgish","German") ~ T,   
-#      country == "Malta" & origlang %in% c("English","Maltese") ~ T,         
-#      country == "Netherlands" & origlang == "Dutch" ~ T,   
-#      country == "Poland" & origlang == "Polish" ~ T,
-#      country == "Portugal" & origlang == "Portuguese" ~ T, 
-#      country == "Romania" & origlang == "Romanian" ~ T,       
-#      country == "Slovakia" & origlang == "Slovak" ~ T,      
-#      country == "Slovenia" & origlang == "Slovenian" ~ T,      
-#      country == "Spain" & origlang == "Spanish" ~ T,         
-#      country == "Sweden" & origlang == "Swedish" ~ T,        
-#      country == "United Kingdom" & origlang == "English" ~ T,
-#      T ~ FALSE
-#     )
-#   )
+# from decision level to reference level
+references <- decisions |> 
+  filter(str_detect(procedure_class ,"Preliminary")) |> 
+  separate_rows(origin, sep = "~~~") |> 
+  filter(!is.na(origin))
 
-# check manually
-# cns_prels_country |> 
-#  filter(valid_lang == FALSE)
+# could add validation of origin and language here (done as of 5/10/23)
+# references |> 
+#   mutate(origin_lang_match = case_when(
+#     origin == "Czechia" & str_detect(language, "Czec") ~ T,
+#     origin == "Slovakia" & str_detect(language, "Slovak") ~ T,
+#     origin == "Italy" & str_detect(language, "Ital|German") ~ T,
+#     origin == "Poland" & str_detect(language, "Polish") ~ T,
+#     origin == "France" & str_detect(language, "French") ~ T,
+#     origin == "Belgium" & str_detect(language, "French|Dutch|German") ~ T,
+#     origin == "Ireland" & str_detect(language, "English|Gael|Irish") ~ T,
+#     origin == "Austria" & str_detect(language, "German|Sloven") ~ T,
+#     origin == "Bulgaria" & str_detect(language, "Bulgar") ~ T,
+#     origin == "Spain" & str_detect(language, "Spani") ~ T,
+#     origin == "Romania" & str_detect(language, "Romani") ~ T,
+#     origin == "Croatia" & str_detect(language, "Croati") ~ T,
+#     origin == "Greece" & str_detect(language, "Greek") ~ T,
+#     origin == "Cyprus" & str_detect(language, "Greek") ~ T,
+#     origin == "Estonia" & str_detect(language, "Estonian") ~ T,
+#     origin == "Finland" & str_detect(language, "Finnish|Swedish") ~ T,
+#     origin == "Denmark" & str_detect(language, "Danish") ~ T,
+#     origin == "Sweden" & str_detect(language, "Swedish") ~ T,
+#     origin == "Luxembourg" & str_detect(language, "French") ~ T,
+#     origin == "Malta" & str_detect(language, "Maltese|English") ~ T,
+#     origin == "Slovenia" & str_detect(language, "Sloven") ~ T,
+#     origin == "Portugal" & str_detect(language, "Portug") ~ T,
+#     origin == "Lithuania" & str_detect(language, "Lithuan") ~ T,
+#     origin == "Latvia" & str_detect(language, "Latvia") ~ T,
+#     origin == "Hungary" & str_detect(language, "Hungar") ~ T,
+#     origin == "Netherlands" & str_detect(language, "Dutch") ~ T,
+#     origin == "United Kingdom" & str_detect(language, "English") ~ T,
+#     origin == "Germany" & str_detect(language, "German") ~ T,
+#     T ~ FALSE
+#   )) |> 
+#   #filter(origin == "Austria", language == "English") |> View()
+#   count(origin_lang_match, origin, language) |> View()
 
+# country ref number
+n_refs_country <- references |> 
+  arrange(date) |> 
+  group_by(origin) |> 
+  summarize(
+    year_first = clx_year[1],
+    n_refs = n()
+  ) |> 
+  mutate(ttip = str_c(origin,": ", n_refs," references. <br>", "First case referred in ", year_first, "."))
 
+# prepare map data
+refs_map_dat <- map_data("world",xlim=c(-10.6600,51.5500), ylim=c(34.5000,71.0500)) |> 
+  mutate(region = ifelse(region == "Czech Republic", "Czechia", region),
+         region = ifelse(region == "UK", "United Kingdom", region))
+
+#map("world",xlim=c(-10.6600,31.5500), ylim=c(34.5000,71.0500))
+
+# map plot
+iplot_map_refs <- n_refs_country |> 
+  ggplot() +
+  geom_map_interactive(
+    aes(map_id = origin,
+        fill = n_refs,
+        tooltip = ttip,
+        data_id = origin),
+    map = refs_map_dat,
+    show.legend = FALSE,
+    color = "grey28",
+    size = 0.2
+  ) +
+  annotate("text", label = "The UK was an EU member between 1973 and 2020.", size = 2.6,
+           x = -1.8, y = 65) +
+  expand_limits(x = c(-10.6600,31.5500), y = c(34.5000,71.0500)) +
+  scale_fill_gradient_interactive(low = "#8993b8", high = "#fe6794") +
+  theme_minimal(base_family = "Arial") +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        plot.background = element_rect(fill = "white", color = "grey88"),
+        title = element_text(face = "bold"),
+        plot.subtitle = element_text(face = "italic"),
+        plot.caption = element_text(face = "italic", size = 8),
+        strip.text = element_text(hjust = 1, face = "bold")) +
+  labs(x = NULL, y = NULL,
+       title = "Preliminary references by country of origin",
+       subtitle = "Total number of cases referred by all national courts")
+
+# interactive
+girafe(ggobj = iplot_map_refs,
+       fonts = list(sans = "Arial"),
+       #width_svg = 12,
+       #height_svg = 8,
+       options = list(opts_sizing(rescale = TRUE),
+                      opts_toolbar(saveaspng = FALSE),
+                      opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
+                                   use_fill = TRUE),
+                      opts_hover_inv(css = "opacity:0.2;"),
+                      opts_hover(css = "opacity:0.99;stroke:gray;")))
 ```
 
-<!-- Include an interactive map of EU countries -->
+## Dataframe
+```{r prelrefdatadf}
+datatable(n_refs_country)
+```
 
-# Appeals
+## Code: Plot
+```{r prelrefdata, eval=FALSE, echo=TRUE}
+```
 
-<!-- Number of appeals from GC to CJ -->
+# {-}
 
-# Citation network
+From a geographical perspective, preliminary references from national courts are very unevenly distributed. By far the highest number of references has come from Germany. Naturally, there is a relationship between the length of a country's membership and the total number of preliminary references. [Research](https://doi.org/10.1080/13501763.2020.1744688) has shown that there are also important subnational disparities.
 
+```{r prelreftime}
+
+# country year counts
+n_ref_year <- references |> 
+  arrange(date) |> 
+  rename(year = clx_year) |> 
+  group_by(origin, year) |> 
+  summarize(n_refs = n()) |> 
+  ungroup() |> 
+  mutate(data_id = str_c(origin,year),
+         ttip = str_c("N = ", n_refs, " (", year, ")"))
+
+# interactive plot
+iplot_refs_time <- n_ref_year |> 
+  ggplot(aes(x = year, y = n_refs)) +
+  geom_point_interactive(aes(
+    data_id = data_id,
+    tooltip = ttip,
+  ), color = "#fe99b8", alpha = 0.5, size = 0.6) +
+  geom_smooth(fill = "#8993b8", color = "#fe99b8", alpha = 0.23, linewidth = 0.6) +
+  scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1)))),
+                     limits = c(0,NA)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(3)) +
+  #scale_x_continuous(breaks = function(x) c(min(round(floor(x)), na.rm = T), max(round(x)))) +
+  facet_wrap(~origin, scales = "free") +
+  theme_minimal(base_family = "Arial") +
+  theme(panel.grid = element_blank(),
+        panel.grid.major.y = element_line(color = "grey94", linewidth = 0.2),
+        panel.grid.major.x = element_line(color = "grey94", linewidth = 0.2),
+        axis.text = element_text(color = "grey10", size = 5),
+        plot.background = element_rect(fill = "white", color = "grey88"),
+        title = element_text(face = "bold"),
+        plot.subtitle = element_text(face = "italic"),
+        plot.caption = element_text(face = "italic", size = 8),
+        plot.margin = margin(t = 8, r = 10, b = 10, l = 6, unit = "pt"),
+        strip.text = element_text(hjust = 1, face = "bold", size = 6)) +
+  labs(x = NULL, y = NULL,
+       title = "Preliminary references over time",
+       subtitle = "Number of cases referred by national courts by country and year")
+
+# interactive
+girafe(ggobj = iplot_refs_time,
+       fonts = list(sans = "Arial"),
+       #width_svg = 12,
+       #height_svg = 8,
+       options = list(opts_sizing(rescale = TRUE),
+                      opts_toolbar(saveaspng = FALSE),
+                      opts_tooltip(css = "background-color:gray;color:white;font-style:italic;padding:9px;border-radius:5px;font-size:15px;",
+                                   use_fill = TRUE),
+                      opts_hover_inv(css = "opacity:0.2;"),
+                      opts_hover(css = "opacity:0.99;stroke:black;")))
+```
+
+In general, referral activity increased over time in most countries. The CJEU and its preliminary ruling procedure gradually gained prominence. Interestingly, the gradual increase in references is also visible for countries that joined the EU more recently when the importance of the CJEU was already well-established. Despite the overall trend, there are also notable differences in the temporal patterns between countries (compare Ireland and Denmark, for example).^[However, because the data used here is not fully accurate, we should not make too much of any individual data point.]
+
+<!-- # Appeals -->
+<!-- Number of appeals from GC to CJ, need to also code outcomes -->
+
+<!-- # Citation network -->
 <!-- use Eur-Lex citation data -->
 
 # Cite
