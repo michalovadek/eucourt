@@ -941,9 +941,9 @@ iplot_map_refs <- n_refs_country |>
     color = "grey28",
     size = 0.2
   ) +
-  annotate("text", label = "The UK was an EU member between 1973 and 2020.", size = 2.6,
-           x = -1.8, y = 65) +
-  expand_limits(x = c(-10.6600,31.5500), y = c(34.5000,71.0500)) +
+  #annotate("text", label = "The UK was an EU member between 1973 and 2020.", size = 2.6,
+  #         x = -1.8, y = 65) +
+  expand_limits(x = c(-10.6600,51.5500), y = c(34.5000,71.0500)) +
   scale_fill_gradient_interactive(low = "#8993b8", high = "#fe6794") +
   theme_minimal(base_family = "Arial") +
   theme(panel.grid = element_blank(),
