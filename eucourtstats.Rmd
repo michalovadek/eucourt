@@ -225,8 +225,8 @@ n_cases <- curia_list |>
   reframe(n = n_distinct(case_id))
 
 n_decisions <- curia_list |> 
-  filter(!case_status %in% c("Transferred", "Joined", "Pending")) |> 
-  reframe(n = n_distinct(case_id, ecli))
+  #filter(!case_status %in% c("Transferred", "Joined", "Pending")) |> 
+  reframe(n = n_distinct(ecli))
 
 n_pending <- curia_list |> 
   filter(case_status == "Pending") |> 
