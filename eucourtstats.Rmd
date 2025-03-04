@@ -166,10 +166,7 @@ curia_list <- curia_list |>
     str_detect(see_case, "[C|T|F] [:digit:]+/[:digit:]+") ~ str_replace(see_case, "(?<=[C|T|F]) (?=[:digit:])", "-"),
     T ~ see_case
   )) |> 
-  mutate(case_id = case_when(
-    case_id == "6-64" ~ "6/64",
-    T ~ case_id
-  ))
+  mutate(case_id = str_replace(case_id, "(?<=[:digit:])-(?=[:digit:])", "/"))
 
 # code vars
 curia_list <- curia_list |> 
@@ -236,8 +233,7 @@ n_pending <- curia_list |>
 # n year court cases
 n_cases_year_court <- curia_list |> 
   #filter(case_status != "Transferred") |> 
-  group_by(court, case_year) |> 
-  reframe(n = n_distinct(case_id)) %>%
+  summarise(n = n_distinct(case_id), .by = c(court,case_year)) %>%
   right_join(., expand(., court, case_year)) |> 
   mutate(n = ifelse(is.na(n), 0L, n))
 ```
