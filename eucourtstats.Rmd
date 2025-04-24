@@ -55,9 +55,15 @@ library(ggiraph)
 library(DT)
 library(lubridate)
 library(maps)
+library(gdtools)
+library(gfonts)
 
 # seed
 set.seed(35239)
+
+# fonts
+register_gfont("Open Sans")
+addGFontHtmlDependency(family = "Open Sans")
 
 # current date
 date_now <- Sys.Date()
@@ -293,7 +299,7 @@ iplot_cases_year_court <- n_cases_year_court_labs |>
   scale_colour_identity() +
   scale_x_continuous(breaks = seq(from = 1950, to = year_now+1, by = 10)) +
   facet_wrap(~court_long, scales = "free_y", dir = "v") +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94"),
         panel.grid.major.x = element_line(color = "grey94"),
@@ -310,7 +316,7 @@ iplot_cases_year_court <- n_cases_year_court_labs |>
 
 # interactive
 girafe(ggobj = iplot_cases_year_court,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -421,7 +427,7 @@ iplot_cases_forecast <- n_cases_year_court_labs |>
   geom_col_interactive(aes(fill = color, tooltip = tooltip, data_id = case_year)) +
   scale_fill_identity() +
   scale_x_continuous(breaks = (year_now-7):(year_now+1)) +
-  theme_minimal(base_family = "Arial") + 
+  theme_minimal(base_family = "sans") + 
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94"),
         #panel.grid.major.x = element_line(color = "grey94"),
@@ -439,7 +445,7 @@ iplot_cases_forecast <- n_cases_year_court_labs |>
 
 # interactive
 girafe(ggobj = iplot_cases_forecast,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -688,7 +694,7 @@ iplot_dec_procs <- n_dec_type_proc |>
   scale_fill_manual_interactive(values = c("#fd014d","#eda1b8")) +
   scale_x_continuous(breaks = seq(from = 1950, to = year_now+1, by = 10)) +
   facet_wrap(~fct_infreq(procedure_class), dir = "v", scales = "free_y") +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94"),
         panel.grid.major.x = element_line(color = "grey94"),
@@ -704,7 +710,7 @@ iplot_dec_procs <- n_dec_type_proc |>
 
 # interactive
 girafe(ggobj = iplot_dec_procs,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -753,7 +759,7 @@ iplot_dec_formation <- decisions |>
   scale_y_continuous(labels = scales::percent) +
   scale_fill_manual_interactive(values = c("#e63c88","#fd014d","#fe99b8","#b10136")) +
   scale_x_continuous(breaks = seq(from = 2005, to = year_now+1, by = 3)) +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94"),
         panel.grid.major.x = element_line(color = "grey94"),
@@ -769,7 +775,7 @@ iplot_dec_formation <- decisions |>
 
 # interactive
 girafe(ggobj = iplot_dec_formation,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -829,7 +835,7 @@ iplot_dec_rapp <- decisions |>
   scale_y_discrete(expand = expansion(0, 0)) +
   scale_x_continuous(expand = c(0, 0)) +
   facet_wrap(~court_long, dir = "v", scales = "free") +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94"),
         panel.grid.major.x = element_line(color = "grey94"),
@@ -845,7 +851,7 @@ iplot_dec_rapp <- decisions |>
 
 # interactive
 girafe(ggobj = iplot_dec_rapp,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -941,7 +947,7 @@ iplot_map_refs <- n_refs_country |>
   #         x = -1.8, y = 65) +
   expand_limits(x = c(-13.6600,38.5500), y = c(34.5000,71.0500)) +
   scale_fill_gradient_interactive(low = "#8993b8", high = "#fe6794") +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         axis.text = element_blank(),
         plot.background = element_rect(fill = "white", color = "grey88"),
@@ -955,7 +961,7 @@ iplot_map_refs <- n_refs_country |>
 
 # interactive
 girafe(ggobj = iplot_map_refs,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
@@ -1021,7 +1027,7 @@ iplot_refs_time <- n_ref_year_all |>
   scale_x_continuous(breaks = scales::pretty_breaks(3)) +
   #scale_x_continuous(breaks = function(x) c(min(round(floor(x)), na.rm = T), max(round(x)))) +
   facet_wrap(~origin, scales = "free") +
-  theme_minimal(base_family = "Arial") +
+  theme_minimal(base_family = "sans") +
   theme(panel.grid = element_blank(),
         panel.grid.major.y = element_line(color = "grey94", linewidth = 0.2),
         panel.grid.major.x = element_line(color = "grey94", linewidth = 0.2),
@@ -1038,7 +1044,7 @@ iplot_refs_time <- n_ref_year_all |>
 
 # interactive
 girafe(ggobj = iplot_refs_time,
-       fonts = list(sans = "Arial"),
+       fonts = list(sans = "Open Sans"),
        #width_svg = 12,
        #height_svg = 8,
        options = list(opts_sizing(rescale = TRUE),
